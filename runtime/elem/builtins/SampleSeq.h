@@ -78,8 +78,8 @@ namespace elem
                 bufferSize = _size;
                 fade.setTargetGain(FloatType(1));
 
-                position = static_cast<size_t>(((currentTime - startTime) / sampleDuration) * (double) (bufferSize - 1u));
-                position = std::clamp<size_t>(position, 0, bufferSize);
+                position = static_cast<size_t>(((currentTime - startTime) / sampleDuration * (double) (bufferSize - 1u))) + startOffset;
+                position = std::clamp<size_t>(position, startOffset, bufferSize - stopOffset);
             }
 
             void disengage() {
@@ -104,41 +104,13 @@ namespace elem
 
             template <typename DestType>
             void readAdding(DestType* outputData, size_t numSamples) {
-                for (size_t i = 0; (i < numSamples) && (position < bufferSize); ++i) {
+                for (size_t i = 0; (i < numSamples) && (position < bufferSize - stopOffset); ++i) {
+                    if (position < startOffset) {
+                        ++position;
+                        continue;
+                    }
                     outputData[i] += static_cast<DestType>(fade(buffer[position++]));
                 }
-            }
-
-            FloatType read (FloatType const* buffer, size_t size, double t)
-            {
-                if (fade.silent() || sampleDuration <= FloatType(0))
-                    return FloatType(0);
-
-                // An allocated but inactive reader is currently fading out at the point in time
-                // from which we jumped to allocate a new reader
-                double const pos = fade.on()
-                    ? (t - startTime) / sampleDuration
-                    : (stepStopTime() - startTime) / sampleDuration;
-
-                // While we're still active, track last position so that we can stop effectively
-                if (fade.on()) {
-                    dt = t - lastTimeStep;
-                    lastTimeStep = t;
-                }
-
-                // Deallocate if we've run out of bounds
-                if (pos < 0.0 || pos >= 1.0) {
-                    disengage();
-                    return FloatType(0);
-                }
-
-                // Instead of clamping here, we could accept loop points in the sample and
-                // mod the playback position within those loop points. Property loop: [start, stop]
-                auto l = static_cast<size_t>(pos * (double) (size - 1u));
-                auto r = std::min(size, l + 1u);
-                auto const alpha = FloatType((pos * (double) (size - 1u)) - static_cast<double>(l));
-
-                return fade(lerp(alpha, buffer[l], buffer[r]));
             }
 
             FloatType stepStopTime() {
@@ -154,6 +126,11 @@ namespace elem
                 dt = 0.0;
             }
 
+            void setOffsets(size_t start, size_t stop) {
+                startOffset = start;
+                stopOffset = stop;
+            }
+
             GainFade<FloatType> fade;
             FloatType* buffer = nullptr;
             size_t bufferSize = 0;
@@ -163,6 +140,8 @@ namespace elem
             double startTime = 0;
             double lastTimeStep = 0;
             double dt = 0;
+            size_t startOffset = 0;
+            size_t stopOffset = 0;
         };
     }
 
@@ -251,6 +230,32 @@ namespace elem
                 seqQueue.push(std::move(data));
             }
 
+            if (key == "startOffset") {
+                if (!val.isNumber())
+                    return ReturnCode::InvalidPropertyType();
+
+                auto const v = (js::Number) val;
+                auto const vi = static_cast<int>(v);
+
+                if (vi < 0)
+                    return ReturnCode::InvalidPropertyValue();
+
+                startOffset.store(static_cast<size_t>(vi));
+            }
+
+            if (key == "stopOffset") {
+                if (!val.isNumber())
+                    return ReturnCode::InvalidPropertyType();
+
+                auto const v = (js::Number) val;
+                auto const vi = static_cast<int>(v);
+
+                if (vi < 0)
+                    return ReturnCode::InvalidPropertyValue();
+
+                stopOffset.store(static_cast<size_t>(vi));
+            }
+
             return GraphNode<FloatType>::setProperty(key, val);
         }
 
@@ -293,6 +298,15 @@ namespace elem
                 readers[0].reset(sampleDur);
                 readers[1].reset(sampleDur);
                 rtSampleDuration = sampleDur;
+            }
+
+            auto const startOffset_ = startOffset.load();
+            auto const stopOffset_ = stopOffset.load();
+            if (startOffset_ != rtStartOffset || stopOffset_ != rtStopOffset) {
+                readers[0].setOffsets(startOffset, stopOffset);
+                readers[1].setOffsets(startOffset, stopOffset);
+                rtStartOffset = startOffset_;
+                rtStopOffset = stopOffset_;
             }
 
             // Pull newest buffer from queue
@@ -401,6 +415,11 @@ namespace elem
         double accFracSamples = 0;
         std::atomic<double> stretchFactor = 1.0;
         std::vector<FloatType> scratchBuffer;
+
+        std::atomic<size_t> startOffset = 0;
+        size_t rtStartOffset = 0;
+        std::atomic<size_t> stopOffset = 0;
+        size_t rtStopOffset = 0;
     };
 
     template <typename FloatType>

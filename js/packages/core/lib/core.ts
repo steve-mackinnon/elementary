@@ -159,6 +159,8 @@ export function sampleseq(
     path: string;
     seq: Array<{ value: number; time: number }>;
     duration: number;
+    startOffset?: number;
+    stopOffset?: number;
   },
   time: ElemNode,
 ): NodeRepr_t {

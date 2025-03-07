@@ -22,8 +22,8 @@ namespace elem
                 bufferSize = _bufferSize;
                 fade.fadeIn();
 
-                position = static_cast<size_t>(((currentTime - startTime) / sampleDuration) * (double) (bufferSize - 1u));
-                position = std::clamp<size_t>(position, 0, bufferSize);
+                position = static_cast<size_t>(((currentTime - startTime) / sampleDuration * (double) (bufferSize - 1u))) + startOffset;
+                position = std::clamp<size_t>(position, startOffset, bufferSize - stopOffset);
             }
 
             void disengage() {
@@ -58,7 +58,11 @@ namespace elem
                     // Reinitialize the local copy to match our member instance
                     localFade = fade;
 
-                    for (size_t i = 0; (i < numSamples) && ((position + i) < bufferSize); ++i) {
+                    for (size_t i = 0; (i < numSamples) && ((position + i) < bufferSize - stopOffset); ++i) {
+                        if (position + i < startOffset) {
+                            ++position;
+                            continue;
+                        }
                         outputData[j][i] += static_cast<DestType>(localFade(sourceData[position + i]));
                     }
                 }
@@ -78,12 +82,19 @@ namespace elem
                 startTime = 0.0;
             }
 
+            void setOffsets(size_t start, size_t stop) {
+                startOffset = start;
+                stopOffset = stop;
+            }
+
             elem::GainFade<FloatType> fade;
             size_t bufferSize = 0;
             size_t position = 0;
 
             double sampleDuration = 0;
             double startTime = 0;
+            size_t startOffset = 0;
+            size_t stopOffset = 0;
         };
     }
 
@@ -177,6 +188,32 @@ namespace elem
                 seqQueue.push(std::move(data));
             }
 
+            if (key == "startOffset") {
+                if (!val.isNumber())
+                    return ReturnCode::InvalidPropertyType();
+
+                auto const v = (js::Number) val;
+                auto const vi = static_cast<int>(v);
+
+                if (vi < 0)
+                    return ReturnCode::InvalidPropertyValue();
+
+                startOffset.store(static_cast<size_t>(vi));
+            }
+
+            if (key == "stopOffset") {
+                if (!val.isNumber())
+                    return ReturnCode::InvalidPropertyType();
+
+                auto const v = (js::Number) val;
+                auto const vi = static_cast<int>(v);
+
+                if (vi < 0)
+                    return ReturnCode::InvalidPropertyValue();
+
+                stopOffset.store(static_cast<size_t>(vi));
+            }
+
             return GraphNode<FloatType>::setProperty(key, val);
         }
 
@@ -217,6 +254,15 @@ namespace elem
                 readers[0].reset(sampleDur);
                 readers[1].reset(sampleDur);
                 rtSampleDuration = sampleDur;
+            }
+
+            auto const startOffset_ = startOffset.load();
+            auto const stopOffset_ = stopOffset.load();
+            if (startOffset_ != rtStartOffset || stopOffset_ != rtStopOffset) {
+                readers[0].setOffsets(startOffset, stopOffset);
+                readers[1].setOffsets(startOffset, stopOffset);
+                rtStartOffset = startOffset_;
+                rtStopOffset = stopOffset_;
             }
 
             // Pull newest buffer from queue
@@ -337,6 +383,11 @@ namespace elem
         double accFracSamples = 0;
         std::atomic<double> stretchFactor = 1.0;
         std::vector<FloatType> scratchBuffer;
+
+        std::atomic<size_t> startOffset = 0;
+        size_t rtStartOffset = 0;
+        std::atomic<size_t> stopOffset = 0;
+        size_t rtStopOffset = 0;
     };
 
     template <typename FloatType>

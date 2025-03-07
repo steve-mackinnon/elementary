@@ -38,6 +38,8 @@ export function sampleseq(
     duration: number;
     path: string;
     channels: number;
+    startOffset?: number;
+    stopOffset?: number;
   },
   time: ElemNode,
 ): Array<NodeRepr_t> {
