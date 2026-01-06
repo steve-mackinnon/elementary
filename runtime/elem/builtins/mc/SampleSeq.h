@@ -1,8 +1,11 @@
 #pragma once
 
+#include "../../GraphNode.h"
+#include "../../SingleWriterSingleReaderQueue.h"
 #include "../helpers/FloatUtils.h"
 #include "../helpers/GainFade.h"
-
+#include "../helpers/RefCountedPool.h"
+#include "../../third-party/signalsmith-stretch/signalsmith-stretch.h"
 
 namespace elem
 {
@@ -199,7 +202,7 @@ namespace elem
 
                 // Here a value of 1.0 is considered an onset, and anything else
                 // considered an offset.
-                if (detail::fpEqual(prevEvent->second, FloatType(1.0))) {
+                if (elem::fpEqual(prevEvent->second, FloatType(1.0))) {
                     readers[activeReader].engage(prevEvent->first, t, activeBuffer->numSamples());
                 }
             }
