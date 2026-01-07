@@ -14,7 +14,7 @@ const out = el.sampleseq(
       { time: 0.6, value: 1 },
     ],
   },
-  el.phasor(0.7)
+  el.phasor(1)
 );
 const stats = core.render(out, out);
 
