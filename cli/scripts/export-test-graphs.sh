@@ -40,4 +40,4 @@ popd >/dev/null
 node "$repo_root/cli/scripts/bounce-test-graphs.js" \
   "$output_dir_abs" \
   "$build_dir_abs/cli/elemoffline" \
-  ${duration_seconds:+$duration_seconds}
+  "8"
