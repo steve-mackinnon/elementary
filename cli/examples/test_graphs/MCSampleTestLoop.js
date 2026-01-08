@@ -8,11 +8,12 @@ const [left, right] = el.mc.sample(
   {
     path: "testtone",
     channels: 2,
-    startOffset: 8192,
-    stopOffset: 8192,
-    playbackRate: 0.5,
+    startOffset: 0,
+    stopOffset: 0,
+    mode: "loop",
+    playbackRate: 1.2,
   },
-  el.train(0.5),
+  1,
 );
 const stats = core.render(left, right);
 
