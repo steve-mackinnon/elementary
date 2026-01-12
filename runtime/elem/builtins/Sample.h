@@ -79,6 +79,20 @@ namespace elem
                 stopOffset.store(static_cast<size_t>(vi));
             }
 
+            if (key == "loopStart") {
+                if (!val.isNumber())
+                    return ReturnCode::InvalidPropertyType();
+
+                loopStart.store((js::Number) val);
+            }
+
+            if (key == "loopEnd") {
+                if (!val.isNumber())
+                    return ReturnCode::InvalidPropertyType();
+
+                loopEnd.store((js::Number) val);
+            }
+
             return GraphNode<FloatType>::setProperty(key, val);
         }
 
@@ -113,6 +127,9 @@ namespace elem
             auto const wantsLoop = mode == Mode::Loop;
             auto const ostart = startOffset.load();
             auto const ostop = stopOffset.load();
+            auto const lstart = loopStart.load();
+            auto const lend = loopEnd.load();
+            auto const loopRange = std::make_optional(std::make_pair(lstart, lend));
 
             // Optionally accept a second input signal specifying the playback rate
             auto const hasPlaybackRateSignal = numChannels >= 2;
@@ -142,6 +159,7 @@ namespace elem
                         1,
                         ostart,
                         ostop,
+                        loopRange,
                         wantsLoop,
                         rate
                     ));
@@ -166,6 +184,8 @@ namespace elem
         std::atomic<Mode> mode = Mode::Trigger;
         std::atomic<size_t> startOffset = 0;
         std::atomic<size_t> stopOffset = 0;
+        std::atomic<double> loopStart = 0.0;
+        std::atomic<double> loopEnd = 1.0;
     };
 
 } // namespace elem

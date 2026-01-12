@@ -90,6 +90,20 @@ namespace elem
                 playbackRate.store((js::Number) val);
             }
 
+            if (key == "loopStart") {
+                if (!val.isNumber())
+                    return ReturnCode::InvalidPropertyType();
+
+                loopStart.store((js::Number) val);
+            }
+
+            if (key == "loopEnd") {
+                if (!val.isNumber())
+                    return ReturnCode::InvalidPropertyType();
+
+                loopEnd.store((js::Number) val);
+            }
+
             return GraphNode<FloatType>::setProperty(key, val);
         }
 
@@ -134,6 +148,9 @@ namespace elem
             auto const ostart = startOffset.load();
             auto const ostop = stopOffset.load();
             auto const rate = playbackRate.load();
+            auto const lstart = loopStart.load();
+            auto const lend = loopEnd.load();
+            auto const loopRange = std::make_optional(std::make_pair(lstart, lend));
 
             size_t i = 0;
             size_t j = 0;
@@ -151,6 +168,7 @@ namespace elem
                             j - i,
                             ostart,
                             ostop,
+                            loopRange,
                             wantsLoop,
                             rate,
                             i
@@ -176,6 +194,7 @@ namespace elem
                             j - i,
                             ostart,
                             ostop,
+                            loopRange,
                             wantsLoop,
                             rate,
                             i
@@ -199,6 +218,7 @@ namespace elem
                     j - i,
                     ostart,
                     ostop,
+                    loopRange,
                     wantsLoop,
                     rate,
                     i
@@ -224,6 +244,8 @@ namespace elem
         std::atomic<size_t> startOffset = 0;
         std::atomic<size_t> stopOffset = 0;
         std::atomic<double> playbackRate = 1.0;
+        std::atomic<double> loopStart = 0.0;
+        std::atomic<double> loopEnd = 1.0;
     };
 
 } // namespace elem
