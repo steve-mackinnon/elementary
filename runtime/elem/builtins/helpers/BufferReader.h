@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cstddef>
 #include <optional>
+#include <utility>
 
 #include "GainFade.h"
 #include "elem/SharedResource.h"
@@ -15,6 +16,9 @@ namespace elem
     public:
         BufferReader(double sampleRate, double fadeTime)
             : fade(sampleRate, fadeTime, fadeTime)
+            , loopFade(sampleRate, fadeTime, fadeTime)
+            , storedSampleRate(sampleRate)
+            , fadeTimeMs(fadeTime)
         {}
 
         void engage (double _position) {
@@ -35,6 +39,7 @@ namespace elem
                 size_t numSamples,
                 std::optional<uint64_t> startOffsetSamples = std::nullopt,
                 std::optional<uint64_t> stopOffsetSamples = std::nullopt,
+                std::optional<std::pair<double, double>> loopRange = std::nullopt,
                 bool shouldLoop = false,
                 double playbackRate = 1.0,
                 size_t writeOffset = 0
@@ -45,6 +50,7 @@ namespace elem
                 , numSamples(numSamples)
                 , startOffsetSamples(startOffsetSamples)
                 , stopOffsetSamples(stopOffsetSamples)
+                , loopRange(loopRange)
                 , shouldLoop(shouldLoop)
                 , playbackRate(playbackRate)
                 , writeOffset(writeOffset)
@@ -56,6 +62,7 @@ namespace elem
             size_t numSamples;
             std::optional<uint64_t> startOffsetSamples;
             std::optional<uint64_t> stopOffsetSamples;
+            std::optional<std::pair<double, double>> loopRange;
             bool shouldLoop;
             double playbackRate;
             size_t writeOffset;
@@ -75,44 +82,93 @@ namespace elem
 
             auto const _startOffset = ctx.startOffsetSamples.value_or(0);
             auto const _stopOffset = ctx.stopOffsetSamples.value_or(0);
-            auto const startOffset = _startOffset >= 0 ? 
+            auto const startOffset = _startOffset >= 0 ?
                 std::min(_startOffset, static_cast<uint64_t>(bufferSize)) : 0;
-            auto const stopOffset = _stopOffset >= 0 ? 
+            auto const stopOffset = _stopOffset >= 0 ?
                 std::min(_stopOffset, static_cast<uint64_t>(bufferSize)) : 0;
             auto const sampleLength = bufferSize - startOffset - stopOffset;
 
             elem::GainFade<FloatType> localFade(fade);
+            elem::GainFade<FloatType> localLoopFade(loopFade);
             double pos = position;
+            double loopPos = loopCrossfadePosition;
+            bool inCrossfade = inLoopCrossfade;
+
+            // Loop range: defaults to full range if not specified
+            auto const loopStart = ctx.loopRange ? ctx.loopRange->first : 0.0;
+            auto const loopEnd = ctx.loopRange ? ctx.loopRange->second : 1.0;
+            auto const loopLength = loopEnd - loopStart;
+
+            // Calculate crossfade window (max 50% of loop to handle very short loops)
+            auto const fadeTimeInSamples = (fadeTimeMs / 1000.0) * storedSampleRate;
+            auto const normalizedFadeWindow = std::min(
+                fadeTimeInSamples / static_cast<double>(sampleLength * loopLength),
+                0.5 * loopLength
+            );
 
             for (size_t j = 0; j < numChannels; ++j) {
                 pos = position;
+                loopPos = loopCrossfadePosition;
                 localFade = fade;
+                localLoopFade = loopFade;
+                inCrossfade = inLoopCrossfade;
 
                 // Here we take a subview of the buffer that ignores samples before the start offset and after the stop offset.
-                // This view then gets passed into lerpRead() below. This means we can treat a pos of 0 as `startOffset` and a 
+                // This view then gets passed into lerpRead() below. This means we can treat a pos of 0 as `startOffset` and a
                 // pos of 1 as `startOffset + sampleLength`.
                 auto bufferView = BufferView<float>::subview(ctx.source->getChannelData(j).data(),
                                                              startOffset, sampleLength);
-                for (size_t i = 0; i < ctx.numSamples; ++i) {
-                    if (pos >= 1.0) {
-                        if (!ctx.shouldLoop) {
-                            break;
-                        }
-                        // Restart the loop. Note there is no crossfade happening yet,
-                        // so loops may be discontinuous.
-                        pos = pos - 1.0;
-                    }
-        
-                    auto const out = static_cast<DestType>(localFade(lerpRead(bufferView, pos)));
-                    ctx.outputData[j][i + ctx.writeOffset] += out;
 
-                    pos += (ctx.playbackRate / static_cast<double>(sampleLength));
+                auto const posIncrement = ctx.playbackRate / static_cast<double>(sampleLength);
+
+                for (size_t i = 0; i < ctx.numSamples; ++i) {
+                    // Check if we should enter crossfade mode
+                    if (ctx.shouldLoop && !inCrossfade && pos >= (loopEnd - normalizedFadeWindow) && pos < loopEnd) {
+                        inCrossfade = true;
+                        loopPos = loopStart;
+                        localLoopFade.fadeIn();
+                        localFade.fadeOut();
+                    }
+
+                    if (inCrossfade) {
+                        // Dual-read crossfade path
+                        auto const tail = localFade(lerpRead(bufferView, pos));
+                        auto const head = localLoopFade(lerpRead(bufferView, loopPos));
+                        ctx.outputData[j][i + ctx.writeOffset] += static_cast<DestType>(tail + head);
+
+                        pos += posIncrement;
+                        loopPos += posIncrement;
+
+                        // Exit crossfade when tail faded out or pos wrapped past loop end
+                        if (localFade.fadedOut() || pos >= loopEnd) {
+                            inCrossfade = false;
+                            pos = loopPos;
+                            localFade = localLoopFade;
+                        }
+                    } else {
+                        // Standard single-read path
+                        if (pos >= loopEnd) {
+                            if (!ctx.shouldLoop) {
+                                break;
+                            }
+                            // Restart the loop at loop start
+                            pos = loopStart + (pos - loopEnd);
+                        }
+
+                        auto const out = static_cast<DestType>(localFade(lerpRead(bufferView, pos)));
+                        ctx.outputData[j][i + ctx.writeOffset] += out;
+
+                        pos += posIncrement;
+                    }
                 }
             }
 
             // Update the fade member to have the latest state
             fade = localFade;
+            loopFade = localLoopFade;
             position = pos;
+            loopCrossfadePosition = loopPos;
+            inLoopCrossfade = inCrossfade;
         }
 
         // Linearly interpolates between the two samples adjacent to the given position.
@@ -140,11 +196,19 @@ namespace elem
 
         void reset () {
             fade.reset();
+            loopFade.reset();
+            inLoopCrossfade = false;
         }
 
     private:
         elem::GainFade<FloatType> fade;
-
         double position = 0;
+
+        // Loop crossfade state
+        elem::GainFade<FloatType> loopFade;
+        double loopCrossfadePosition = 0.0;
+        bool inLoopCrossfade = false;
+        double storedSampleRate = 0.0;
+        double fadeTimeMs = 0.0;
     };
 } // namespace elem
