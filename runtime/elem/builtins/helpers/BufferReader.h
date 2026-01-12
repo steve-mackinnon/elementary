@@ -16,7 +16,7 @@ namespace elem
     public:
         BufferReader(double sampleRate, double fadeTime)
             : fade(sampleRate, fadeTime, fadeTime)
-            , loopFade(sampleRate, fadeTime, fadeTime)
+            , loopStartFade(sampleRate, fadeTime, fadeTime)
             , storedSampleRate(sampleRate)
             , fadeTimeMs(fadeTime)
         {}
@@ -89,7 +89,7 @@ namespace elem
             auto const sampleLength = bufferSize - startOffset - stopOffset;
 
             elem::GainFade<FloatType> localFade(fade);
-            elem::GainFade<FloatType> localLoopFade(loopFade);
+            elem::GainFade<FloatType> localLoopStartFade(loopStartFade);
             double pos = position;
             double loopPos = loopCrossfadePosition;
             bool inCrossfade = inLoopCrossfade;
@@ -110,7 +110,7 @@ namespace elem
                 pos = position;
                 loopPos = loopCrossfadePosition;
                 localFade = fade;
-                localLoopFade = loopFade;
+                localLoopStartFade = loopStartFade;
                 inCrossfade = inLoopCrossfade;
 
                 // Here we take a subview of the buffer that ignores samples before the start offset and after the stop offset.
@@ -126,14 +126,14 @@ namespace elem
                     if (ctx.shouldLoop && !inCrossfade && pos >= (loopEnd - normalizedFadeWindow) && pos < loopEnd) {
                         inCrossfade = true;
                         loopPos = loopStart;
-                        localLoopFade.fadeIn();
+                        localLoopStartFade.fadeIn();
                         localFade.fadeOut();
                     }
 
                     if (inCrossfade) {
                         // Dual-read crossfade path
                         auto const tail = localFade(lerpRead(bufferView, pos));
-                        auto const head = localLoopFade(lerpRead(bufferView, loopPos));
+                        auto const head = localLoopStartFade(lerpRead(bufferView, loopPos));
                         ctx.outputData[j][i + ctx.writeOffset] += static_cast<DestType>(tail + head);
 
                         pos += posIncrement;
@@ -143,10 +143,13 @@ namespace elem
                         if (localFade.fadedOut() || pos >= loopEnd) {
                             inCrossfade = false;
                             pos = loopPos;
-                            localFade = localLoopFade;
+                            localFade = localLoopStartFade;
+                            // Ensure the loop fade is reset to zero before the next loop
+                            localLoopStartFade.reset();
                         }
                     } else {
                         // Standard single-read path
+
                         if (pos >= loopEnd) {
                             if (!ctx.shouldLoop) {
                                 break;
@@ -165,7 +168,7 @@ namespace elem
 
             // Update the fade member to have the latest state
             fade = localFade;
-            loopFade = localLoopFade;
+            loopStartFade = localLoopStartFade;
             position = pos;
             loopCrossfadePosition = loopPos;
             inLoopCrossfade = inCrossfade;
@@ -196,7 +199,7 @@ namespace elem
 
         void reset () {
             fade.reset();
-            loopFade.reset();
+            loopStartFade.reset();
             inLoopCrossfade = false;
         }
 
@@ -205,7 +208,7 @@ namespace elem
         double position = 0;
 
         // Loop crossfade state
-        elem::GainFade<FloatType> loopFade;
+        elem::GainFade<FloatType> loopStartFade;
         double loopCrossfadePosition = 0.0;
         bool inLoopCrossfade = false;
         double storedSampleRate = 0.0;
