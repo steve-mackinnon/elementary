@@ -91,7 +91,6 @@ namespace elem
             elem::GainFade<FloatType> localFade(fade);
             elem::GainFade<FloatType> localLoopStartFade(loopStartFade);
             double pos = position;
-            double loopPos = loopCrossfadePosition;
             bool inCrossfade = inLoopCrossfade;
 
             // Loop range: defaults to full range if not specified
@@ -106,9 +105,11 @@ namespace elem
                 0.5 * loopLength
             );
 
+            auto const loopLengthWithFade = loopEnd - loopStart - normalizedFadeWindow;
+            auto const posIncrement = ctx.playbackRate / static_cast<double>(sampleLength);
+
             for (size_t j = 0; j < numChannels; ++j) {
                 pos = position;
-                loopPos = loopCrossfadePosition;
                 localFade = fade;
                 localLoopStartFade = loopStartFade;
                 inCrossfade = inLoopCrossfade;
@@ -119,30 +120,29 @@ namespace elem
                 auto bufferView = BufferView<float>::subview(ctx.source->getChannelData(j).data(),
                                                              startOffset, sampleLength);
 
-                auto const posIncrement = ctx.playbackRate / static_cast<double>(sampleLength);
-
                 for (size_t i = 0; i < ctx.numSamples; ++i) {
                     // Check if we should enter crossfade mode
                     if (ctx.shouldLoop && !inCrossfade && pos >= (loopEnd - normalizedFadeWindow) && pos < loopEnd) {
                         inCrossfade = true;
-                        loopPos = loopStart;
                         localLoopStartFade.fadeIn();
                         localFade.fadeOut();
                     }
 
                     if (inCrossfade) {
-                        // Dual-read crossfade path
+                        // Dual-read crossfade path: derive head position from tail position
+                        auto const headPos = pos - loopLengthWithFade;
                         auto const tail = localFade(lerpRead(bufferView, pos));
-                        auto const head = localLoopStartFade(lerpRead(bufferView, loopPos));
+                        auto const head = localLoopStartFade(lerpRead(bufferView, headPos));
                         ctx.outputData[j][i + ctx.writeOffset] += static_cast<DestType>(tail + head);
 
                         pos += posIncrement;
-                        loopPos += posIncrement;
 
-                        // Exit crossfade when tail faded out or pos wrapped past loop end
+                        // Exit crossfade when:
+                        // 1. Tail fade completed naturally, OR
+                        // 2. Tail position reached loop end before fade completed (fast playback)
                         if (localFade.fadedOut() || pos >= loopEnd) {
                             inCrossfade = false;
-                            pos = loopPos;
+                            pos = pos - loopLengthWithFade;
                             localFade = localLoopStartFade;
                             // Ensure the loop fade is reset to zero before the next loop
                             localLoopStartFade.reset();
@@ -170,7 +170,6 @@ namespace elem
             fade = localFade;
             loopStartFade = localLoopStartFade;
             position = pos;
-            loopCrossfadePosition = loopPos;
             inLoopCrossfade = inCrossfade;
         }
 
@@ -209,7 +208,6 @@ namespace elem
 
         // Loop crossfade state
         elem::GainFade<FloatType> loopStartFade;
-        double loopCrossfadePosition = 0.0;
         bool inLoopCrossfade = false;
         double storedSampleRate = 0.0;
         double fadeTimeMs = 0.0;
