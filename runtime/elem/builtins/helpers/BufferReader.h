@@ -14,10 +14,10 @@ namespace elem
     template <typename FloatType>
     class BufferReader {
     public:
-        BufferReader(double sampleRate, double fadeTime)
-            : fade(sampleRate, fadeTime, fadeTime)
-            , loopStartFade(sampleRate, fadeTime, fadeTime)
-            , storedSampleRate(sampleRate)
+        BufferReader(double sampleRate_, double fadeTime)
+            : fade(sampleRate_, fadeTime, fadeTime)
+            , loopStartFade(sampleRate_, fadeTime, fadeTime)
+            , sampleRate(sampleRate_)
             , fadeTimeMs(fadeTime)
         {}
 
@@ -99,7 +99,7 @@ namespace elem
             auto const loopLength = loopEnd - loopStart;
 
             // Calculate crossfade window (max 50% of loop to handle very short loops)
-            auto const fadeTimeInSamples = (fadeTimeMs / 1000.0) * storedSampleRate;
+            auto const fadeTimeInSamples = (fadeTimeMs / 1000.0) * sampleRate;
             auto const normalizedFadeWindow = std::min(
                 fadeTimeInSamples / static_cast<double>(sampleLength * loopLength),
                 0.5 * loopLength
@@ -209,7 +209,7 @@ namespace elem
         // Loop crossfade state
         elem::GainFade<FloatType> loopStartFade;
         bool inLoopCrossfade = false;
-        double storedSampleRate = 0.0;
+        double sampleRate = 0.0;
         double fadeTimeMs = 0.0;
     };
 } // namespace elem
