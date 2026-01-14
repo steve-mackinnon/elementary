@@ -225,6 +225,8 @@ public:
             }
         }
 
+        auto const beatTime = sampleTimeToBeatTime(sampleTime, bpm, sampleRate);
+
         auto const currentTime = elem::CurrentTime {
             sampleTime,
             beatTime,
@@ -301,6 +303,32 @@ public:
         bpm = beatsPerMinute;
         // Recalculate sampleTime from beatTime at new BPM
         sampleTime = beatTimeToSampleTime(beatTime, bpm, sampleRate);
+    }
+
+    void setTimeSignature(double const numerator, double const denominator)
+    {
+        if (numerator <= 0.0 || denominator <= 0.0)
+            return;
+
+        timeSignatureNumerator = numerator;
+        timeSignatureDenominator = denominator;
+    }
+
+    void setBeatTime(double const timeInBeats)
+    {
+        if (sampleRate <= 0.0 || bpm <= 0.0)
+            return;
+
+        sampleTime = beatTimeToSampleTime(timeInBeats, bpm, sampleRate);
+    }
+
+    void setBpm(double const beatsPerMinute)
+    {
+        if (beatsPerMinute <= 0.0)
+            return;
+
+        bpm = beatsPerMinute;
+        // sampleTime stays fixed, beatTime recalculated in next process()
     }
 
     void setTimeSignature(double const numerator, double const denominator)
