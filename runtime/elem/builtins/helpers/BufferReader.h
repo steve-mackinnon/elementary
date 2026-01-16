@@ -177,7 +177,9 @@ namespace elem
         // @param pos must be a normalized value between 0 and 1.
         static FloatType lerpRead(BufferView<float> const& view, double pos)
         {
-            assert(pos >= 0.0 && pos <= 1.0);
+            if (pos < 0.0 || pos > 1.0) {
+                return FloatType(0);
+            }
 
             auto* data = view.data();
             auto size = view.size();
