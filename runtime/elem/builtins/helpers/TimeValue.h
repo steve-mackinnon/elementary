@@ -29,6 +29,14 @@ namespace elem
         Div_32,
     };
 
+    // Mask for encoding TimeValue into uint64_t
+    // Layout: [61 bits payload][3 bits type tag]
+    // For doubles, we store the raw bits with lower 3 bits replaced by type tag.
+    // This loses ~3 bits of mantissa precision (negligible for time values).
+    // 0x7 = 0b111, so ~0x7 = 0xFFFFFFFFFFFFFFF8 = all bits except lower 3
+    constexpr uint64_t kTimeValuePayloadMask = ~0x7ULL;
+    constexpr uint64_t kTimeValueTypeMask = 0x7ULL;
+
     // Time value type discriminant
     enum class TimeValueType : uint8_t {
         Invalid = 0,
@@ -73,56 +81,50 @@ namespace elem
     }
 
     // Pack TimeValue into uint64_t for atomic storage
-    // Layout: [3 bits type][61 bits payload]
+    // Layout: [61 bits payload][3 bits type]
+    // For doubles, we mask off lower 3 bits (negligible precision loss)
     inline uint64_t encodeTimeValue(TimeValue const& tv) {
-        uint64_t encoded = 0;
         uint64_t typeTag = static_cast<uint64_t>(tv.type);
-
-        encoded = typeTag;
 
         switch (tv.type) {
             case TimeValueType::Seconds:
             case TimeValueType::Milliseconds: {
-                // Store double as uint64_t bitwise
+                // Store double as uint64_t bitwise, masking lower 3 bits for type
                 uint64_t payload;
                 std::memcpy(&payload, &tv.timeSeconds, sizeof(double));
-                encoded |= (payload << 3);
-                break;
+                return typeTag | (payload & kTimeValuePayloadMask);
             }
             case TimeValueType::BarsNormal:
             case TimeValueType::BarsTriplet:
             case TimeValueType::BarsDotted: {
-                // Store division enum value
+                // Store division enum value shifted left
                 uint64_t payload = static_cast<uint64_t>(tv.division);
-                encoded |= (payload << 3);
-                break;
+                return typeTag | (payload << 3);
             }
             case TimeValueType::Invalid:
             default:
-                break;
+                return typeTag;
         }
-
-        return encoded;
     }
 
     // Unpack uint64_t back to TimeValue
     inline TimeValue decodeTimeValue(uint64_t encoded) {
         TimeValue tv;
 
-        uint64_t typeTag = encoded & 0x7; // Lower 3 bits
+        uint64_t typeTag = encoded & kTimeValueTypeMask;
         tv.type = static_cast<TimeValueType>(typeTag);
-
-        uint64_t payload = encoded >> 3;
 
         switch (tv.type) {
             case TimeValueType::Seconds:
             case TimeValueType::Milliseconds: {
+                uint64_t payload = encoded & kTimeValuePayloadMask;
                 std::memcpy(&tv.timeSeconds, &payload, sizeof(double));
                 break;
             }
             case TimeValueType::BarsNormal:
             case TimeValueType::BarsTriplet:
             case TimeValueType::BarsDotted: {
+                uint64_t payload = encoded >> 3;
                 tv.division = static_cast<MusicalDivision>(payload & 0xFF);
                 break;
             }
