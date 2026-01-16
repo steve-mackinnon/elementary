@@ -5,6 +5,7 @@
 #include "../../Types.h"
 
 #include "../helpers/Change.h"
+#include "../helpers/TimeValue.h"
 #include "elem/builtins/helpers/BufferReader.h"
 #include <algorithm>
 
@@ -91,17 +92,33 @@ namespace elem
             }
 
             if (key == "loopStart") {
-                if (!val.isNumber())
-                    return ReturnCode::InvalidPropertyType();
+                if (val.isUndefined() || val.isNull()) {
+                    loopStartEncoded.store(0);  // Clear to Invalid state
+                } else {
+                    if (!val.isString())
+                        return ReturnCode::InvalidPropertyType();
 
-                loopStart.store((js::Number) val);
+                    auto parsed = parseTimeString((js::String) val);
+                    if (!parsed.has_value())
+                        return ReturnCode::InvalidPropertyValue();
+
+                    loopStartEncoded.store(encodeTimeValue(parsed.value()));
+                }
             }
 
             if (key == "loopEnd") {
-                if (!val.isNumber())
-                    return ReturnCode::InvalidPropertyType();
+                if (val.isUndefined() || val.isNull()) {
+                    loopEndEncoded.store(0);  // Clear to Invalid state
+                } else {
+                    if (!val.isString())
+                        return ReturnCode::InvalidPropertyType();
 
-                loopEnd.store((js::Number) val);
+                    auto parsed = parseTimeString((js::String) val);
+                    if (!parsed.has_value())
+                        return ReturnCode::InvalidPropertyValue();
+
+                    loopEndEncoded.store(encodeTimeValue(parsed.value()));
+                }
             }
 
             return GraphNode<FloatType>::setProperty(key, val);
@@ -148,8 +165,17 @@ namespace elem
             auto const ostart = startOffset.load();
             auto const ostop = stopOffset.load();
             auto const rate = playbackRate.load();
-            auto const lstart = loopStart.load();
-            auto const lend = loopEnd.load();
+
+            // Decode and convert loop points
+            auto const bufferLength = activeBuffer ? activeBuffer->numSamples() : 0;
+            auto const [lstart, lend] = decodeAndConvertLoopPoints(
+                loopStartEncoded.load(),
+                loopEndEncoded.load(),
+                bufferLength,
+                GraphNode<FloatType>::getSampleRate(),
+                ctx.currentTime
+            );
+
             auto const loopRange = std::make_optional(std::make_pair(lstart, lend));
 
             size_t i = 0;
@@ -244,8 +270,8 @@ namespace elem
         std::atomic<size_t> startOffset = 0;
         std::atomic<size_t> stopOffset = 0;
         std::atomic<double> playbackRate = 1.0;
-        std::atomic<double> loopStart = 0.0;
-        std::atomic<double> loopEnd = 1.0;
+        std::atomic<uint64_t> loopStartEncoded = 0;  // 0 = invalid, defaults to 0.0
+        std::atomic<uint64_t> loopEndEncoded = 0;    // 0 = invalid, defaults to 1.0
     };
 
 } // namespace elem
