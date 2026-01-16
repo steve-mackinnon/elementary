@@ -5,6 +5,7 @@
 #include <cstring>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <utility>
 
 #include "../../Types.h"
@@ -137,17 +138,15 @@ namespace elem
         return tv;
     }
 
-    // Parse a string like "2.5s", "100ms", "1/4", "1/16t", "1/8d"
-    inline std::optional<TimeValue> parseTimeString(std::string const& str) {
-        if (str.empty()) {
-            return std::nullopt;
-        }
+    namespace detail {
 
-        TimeValue tv;
+        // Parse seconds format: "2.5s"
+        inline std::optional<TimeValue> parseSeconds(std::string const& str) {
+            if (str.size() < 2 || str.back() != 's' || str[str.size() - 2] == 'm')
+                return std::nullopt;
 
-        // Check for seconds suffix
-        if (str.size() >= 2 && str.back() == 's' && str[str.size() - 2] != 'm') {
             try {
+                TimeValue tv;
                 tv.type = TimeValueType::Seconds;
                 tv.timeSeconds = std::stod(str.substr(0, str.size() - 1));
                 return tv;
@@ -156,9 +155,13 @@ namespace elem
             }
         }
 
-        // Check for milliseconds suffix
-        if (str.size() >= 3 && str.substr(str.size() - 2) == "ms") {
+        // Parse milliseconds format: "100ms"
+        inline std::optional<TimeValue> parseMilliseconds(std::string const& str) {
+            if (str.size() < 3 || str.substr(str.size() - 2) != "ms")
+                return std::nullopt;
+
             try {
+                TimeValue tv;
                 tv.type = TimeValueType::Milliseconds;
                 tv.timeMs = std::stod(str.substr(0, str.size() - 2));
                 return tv;
@@ -167,94 +170,112 @@ namespace elem
             }
         }
 
-        // Check for bar fraction pattern: "numerator/denominator[t|d]"
-        size_t slashPos = str.find('/');
-        if (slashPos != std::string::npos) {
+        // Map denominator value to MusicalDivision for fractions (1/N)
+        inline std::optional<MusicalDivision> fractionDenomToMusicalDivision(int denom) {
+            switch (denom) {
+                case 256: return MusicalDivision::Div_1_256;
+                case 128: return MusicalDivision::Div_1_128;
+                case 64: return MusicalDivision::Div_1_64;
+                case 32: return MusicalDivision::Div_1_32;
+                case 16: return MusicalDivision::Div_1_16;
+                case 8: return MusicalDivision::Div_1_8;
+                case 4: return MusicalDivision::Div_1_4;
+                case 2: return MusicalDivision::Div_1_2;
+                default: return std::nullopt;
+            }
+        }
+
+        // Map whole bar count to MusicalDivision
+        inline std::optional<MusicalDivision> wholeBarToMusicalDivision(int bars) {
+            switch (bars) {
+                case 1: return MusicalDivision::Div_1;
+                case 2: return MusicalDivision::Div_2;
+                case 4: return MusicalDivision::Div_4;
+                case 8: return MusicalDivision::Div_8;
+                case 16: return MusicalDivision::Div_16;
+                case 32: return MusicalDivision::Div_32;
+                default: return std::nullopt;
+            }
+        }
+
+        // Extract triplet/dotted suffix, returns (isTriplet, isDotted, strippedString)
+        inline std::tuple<bool, bool, std::string> extractModifierSuffix(std::string const& str) {
+            if (!str.empty() && str.back() == 't')
+                return {true, false, str.substr(0, str.size() - 1)};
+            if (!str.empty() && str.back() == 'd')
+                return {false, true, str.substr(0, str.size() - 1)};
+            return {false, false, str};
+        }
+
+        // Determine TimeValueType from triplet/dotted flags
+        inline TimeValueType barTypeFromModifiers(bool isTriplet, bool isDotted) {
+            if (isTriplet) return TimeValueType::BarsTriplet;
+            if (isDotted) return TimeValueType::BarsDotted;
+            return TimeValueType::BarsNormal;
+        }
+
+        // Parse bar fraction format: "1/4", "1/16t", "1/8d"
+        inline std::optional<TimeValue> parseBarFraction(std::string const& str) {
+            size_t slashPos = str.find('/');
+            if (slashPos == std::string::npos)
+                return std::nullopt;
+
             try {
-                // Parse numerator and denominator
                 int numerator = std::stoi(str.substr(0, slashPos));
+                if (numerator != 1)
+                    return std::nullopt;
 
-                // Check for triplet or dotted suffix
-                bool isTriplet = false;
-                bool isDotted = false;
-                std::string denomPart = str.substr(slashPos + 1);
-
-                if (!denomPart.empty() && denomPart.back() == 't') {
-                    isTriplet = true;
-                    denomPart = denomPart.substr(0, denomPart.size() - 1);
-                } else if (!denomPart.empty() && denomPart.back() == 'd') {
-                    isDotted = true;
-                    denomPart = denomPart.substr(0, denomPart.size() - 1);
-                }
-
+                auto [isTriplet, isDotted, denomPart] = extractModifierSuffix(str.substr(slashPos + 1));
                 int denominator = std::stoi(denomPart);
 
-                // Map denominator to MusicalDivision (only support standard power-of-2 values)
-                // Only numerator of 1 is supported for now
-                if (numerator != 1) {
+                auto div = fractionDenomToMusicalDivision(denominator);
+                if (!div)
                     return std::nullopt;
-                }
 
-                MusicalDivision div;
-                switch (denominator) {
-                    case 256: div = MusicalDivision::Div_1_256; break;
-                    case 128: div = MusicalDivision::Div_1_128; break;
-                    case 64: div = MusicalDivision::Div_1_64; break;
-                    case 32: div = MusicalDivision::Div_1_32; break;
-                    case 16: div = MusicalDivision::Div_1_16; break;
-                    case 8: div = MusicalDivision::Div_1_8; break;
-                    case 4: div = MusicalDivision::Div_1_4; break;
-                    case 2: div = MusicalDivision::Div_1_2; break;
-                    default: return std::nullopt;
-                }
-
-                tv.division = div;
-                tv.type = isTriplet ? TimeValueType::BarsTriplet :
-                          isDotted ? TimeValueType::BarsDotted :
-                          TimeValueType::BarsNormal;
-
+                TimeValue tv;
+                tv.division = *div;
+                tv.type = barTypeFromModifiers(isTriplet, isDotted);
                 return tv;
             } catch (...) {
                 return std::nullopt;
             }
         }
 
-        // Check for whole number bars: "1", "2", "4", etc (with optional t/d suffix)
-        bool isTriplet = false;
-        bool isDotted = false;
-        std::string numPart = str;
+        // Parse whole bar format: "1", "2", "4t", "8d"
+        inline std::optional<TimeValue> parseWholeBar(std::string const& str) {
+            try {
+                auto [isTriplet, isDotted, numPart] = extractModifierSuffix(str);
 
-        if (!str.empty() && str.back() == 't') {
-            isTriplet = true;
-            numPart = str.substr(0, str.size() - 1);
-        } else if (!str.empty() && str.back() == 'd') {
-            isDotted = true;
-            numPart = str.substr(0, str.size() - 1);
-        }
+                // Verify string is purely numeric (stoi would accept "2/4" as 2)
+                if (numPart.empty() || !std::all_of(numPart.begin(), numPart.end(), ::isdigit))
+                    return std::nullopt;
 
-        try {
-            int bars = std::stoi(numPart);
+                int bars = std::stoi(numPart);
 
-            MusicalDivision div;
-            switch (bars) {
-                case 1: div = MusicalDivision::Div_1; break;
-                case 2: div = MusicalDivision::Div_2; break;
-                case 4: div = MusicalDivision::Div_4; break;
-                case 8: div = MusicalDivision::Div_8; break;
-                case 16: div = MusicalDivision::Div_16; break;
-                case 32: div = MusicalDivision::Div_32; break;
-                default: return std::nullopt;
+                auto div = wholeBarToMusicalDivision(bars);
+                if (!div)
+                    return std::nullopt;
+
+                TimeValue tv;
+                tv.division = *div;
+                tv.type = barTypeFromModifiers(isTriplet, isDotted);
+                return tv;
+            } catch (...) {
+                return std::nullopt;
             }
-
-            tv.division = div;
-            tv.type = isTriplet ? TimeValueType::BarsTriplet :
-                      isDotted ? TimeValueType::BarsDotted :
-                      TimeValueType::BarsNormal;
-
-            return tv;
-        } catch (...) {
-            return std::nullopt;
         }
+
+    } // namespace detail
+
+    // Parse a string like "2.5s", "100ms", "1/4", "1/16t", "1/8d"
+    inline std::optional<TimeValue> parseTimeString(std::string const& str) {
+        if (str.empty())
+            return std::nullopt;
+
+        if (auto r = detail::parseSeconds(str)) return r;
+        if (auto r = detail::parseMilliseconds(str)) return r;
+        if (auto r = detail::parseBarFraction(str)) return r;
+        if (auto r = detail::parseWholeBar(str)) return r;
 
         return std::nullopt;
     }
