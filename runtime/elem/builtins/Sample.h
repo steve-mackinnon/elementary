@@ -149,22 +149,22 @@ namespace elem
             auto const bufferLength = activeBuffer ? activeBuffer->numSamples() : 0;
 
             // Decode start and length separately
-            auto const lstartTV = decodeTimeValue(loopStartEncoded.load());
-            auto const llengthTV = decodeTimeValue(loopLengthEncoded.load());
+            auto const loopStartTime = decodeTimeValue(loopStartEncoded.load());
+            auto const loopLength = decodeTimeValue(loopLengthEncoded.load());
 
             // Convert to normalized positions with defaults
-            auto const lstart = lstartTV.type == TimeValueType::Invalid ? 0.0 :
-                toNormalizedPosition(lstartTV, ctx.currentTime.bpm, bufferLength, sampleRate,
+            auto const normalizedLoopStart = loopStartTime.type == TimeValueType::Invalid ? 0.0 :
+                toNormalizedPosition(loopStartTime, ctx.currentTime.bpm, bufferLength, sampleRate,
                                      ctx.currentTime.timeSignatureNumerator,
                                      ctx.currentTime.timeSignatureDenominator);
-            auto const llength = llengthTV.type == TimeValueType::Invalid ? 1.0 :
-                toNormalizedPosition(llengthTV, ctx.currentTime.bpm, bufferLength, sampleRate,
+            auto const normalizedLoopLength = loopLength.type == TimeValueType::Invalid ? 1.0 :
+                toNormalizedPosition(loopLength, ctx.currentTime.bpm, bufferLength, sampleRate,
                                      ctx.currentTime.timeSignatureNumerator,
                                      ctx.currentTime.timeSignatureDenominator);
 
-            auto const lend = lstart + llength;
+            auto const normalizedLoopEnd = normalizedLoopStart + normalizedLoopLength;
 
-            auto const loopRange = std::make_optional(std::make_pair(lstart, lend));
+            auto const loopRange = std::make_optional(std::make_pair(normalizedLoopStart, normalizedLoopEnd));
 
             // Optionally accept a second input signal specifying the playback rate
             auto const hasPlaybackRateSignal = numChannels >= 2;
