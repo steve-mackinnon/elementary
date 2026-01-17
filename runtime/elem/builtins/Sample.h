@@ -95,9 +95,9 @@ namespace elem
                 }
             }
 
-            if (key == "loopEnd") {
+            if (key == "loopLength") {
                 if (val.isUndefined() || val.isNull()) {
-                    loopEndEncoded.store(0);  // Clear to Invalid state
+                    loopLengthEncoded.store(0);  // Clear to Invalid state
                 } else {
                     if (!val.isString())
                         return ReturnCode::InvalidPropertyType();
@@ -106,7 +106,7 @@ namespace elem
                     if (!parsed.has_value())
                         return ReturnCode::InvalidPropertyValue();
 
-                    loopEndEncoded.store(encodeTimeValue(parsed.value()));
+                    loopLengthEncoded.store(encodeTimeValue(parsed.value()));
                 }
             }
 
@@ -147,13 +147,23 @@ namespace elem
 
             // Decode and convert loop points
             auto const bufferLength = activeBuffer ? activeBuffer->numSamples() : 0;
-            auto const [lstart, lend] = decodeAndConvertLoopPoints(
-                loopStartEncoded.load(),
-                loopEndEncoded.load(),
-                bufferLength,
-                GraphNode<FloatType>::getSampleRate(),
-                ctx.currentTime
-            );
+
+            // Decode start and length separately
+            auto const lstartTV = decodeTimeValue(loopStartEncoded.load());
+            auto const llengthTV = decodeTimeValue(loopLengthEncoded.load());
+
+            // Convert to normalized positions with defaults
+            auto const lstart = lstartTV.type == TimeValueType::Invalid ? 0.0 :
+                toNormalizedPosition(lstartTV, ctx.currentTime.bpm, bufferLength, sampleRate,
+                                     ctx.currentTime.timeSignatureNumerator,
+                                     ctx.currentTime.timeSignatureDenominator);
+            auto const llength = llengthTV.type == TimeValueType::Invalid ? 1.0 :
+                toNormalizedPosition(llengthTV, ctx.currentTime.bpm, bufferLength, sampleRate,
+                                     ctx.currentTime.timeSignatureNumerator,
+                                     ctx.currentTime.timeSignatureDenominator);
+
+            // Compute end and clamp to [0,1]
+            auto const lend = std::min(1.0, lstart + llength);
 
             auto const loopRange = std::make_optional(std::make_pair(lstart, lend));
 
@@ -210,8 +220,8 @@ namespace elem
         std::atomic<Mode> mode = Mode::Trigger;
         std::atomic<size_t> startOffset = 0;
         std::atomic<size_t> stopOffset = 0;
-        std::atomic<uint64_t> loopStartEncoded = 0;  // 0 = invalid, defaults to 0.0
-        std::atomic<uint64_t> loopEndEncoded = 0;    // 0 = invalid, defaults to 1.0
+        std::atomic<uint64_t> loopStartEncoded = 0;   // 0 = invalid, defaults to 0.0
+        std::atomic<uint64_t> loopLengthEncoded = 0;  // 0 = invalid, defaults to 1.0
     };
 
 } // namespace elem

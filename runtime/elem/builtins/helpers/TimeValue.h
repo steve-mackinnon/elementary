@@ -30,6 +30,14 @@ namespace elem
         Div_32,
     };
 
+    // Bar.Beat.Subdivision notation (1-indexed)
+    // e.g., "9.1.3" = 9th bar, 1st beat, 3rd sixteenth note
+    struct BarBeatSubdivision {
+        uint16_t bar;          // 1-indexed
+        uint8_t beat;          // 1-indexed
+        uint8_t subdivision;   // 1-indexed (sixteenth notes)
+    };
+
     // Mask for encoding TimeValue into uint64_t
     // Layout: [61 bits payload][3 bits type tag]
     // For doubles, we store the raw bits with lower 3 bits replaced by type tag.
@@ -46,6 +54,7 @@ namespace elem
         BarsNormal,
         BarsTriplet,
         BarsDotted,
+        BarBeatSubdivision,
     };
 
     // Intermediate representation for parsed time values
@@ -55,6 +64,7 @@ namespace elem
             double timeSeconds;
             double timeMs;
             MusicalDivision division;
+            BarBeatSubdivision barBeatSub;
         };
 
         TimeValue() : type(TimeValueType::Invalid), timeSeconds(0.0) {}
@@ -102,6 +112,13 @@ namespace elem
                 uint64_t payload = static_cast<uint64_t>(tv.division);
                 return typeTag | (payload << 3);
             }
+            case TimeValueType::BarBeatSubdivision: {
+                // Pack bar (16 bits) + beat (8 bits) + subdivision (8 bits)
+                uint64_t payload = (static_cast<uint64_t>(tv.barBeatSub.bar) << 16)
+                                 | (static_cast<uint64_t>(tv.barBeatSub.beat) << 8)
+                                 | static_cast<uint64_t>(tv.barBeatSub.subdivision);
+                return typeTag | (payload << 3);
+            }
             case TimeValueType::Invalid:
             default:
                 return typeTag;
@@ -127,6 +144,13 @@ namespace elem
             case TimeValueType::BarsDotted: {
                 uint64_t payload = encoded >> 3;
                 tv.division = static_cast<MusicalDivision>(payload & 0xFF);
+                break;
+            }
+            case TimeValueType::BarBeatSubdivision: {
+                uint64_t payload = encoded >> 3;
+                tv.barBeatSub.bar = static_cast<uint16_t>((payload >> 16) & 0xFFFF);
+                tv.barBeatSub.beat = static_cast<uint8_t>((payload >> 8) & 0xFF);
+                tv.barBeatSub.subdivision = static_cast<uint8_t>(payload & 0xFF);
                 break;
             }
             case TimeValueType::Invalid:
@@ -265,9 +289,67 @@ namespace elem
             }
         }
 
+        // Parse bar.beat.subdivision format: "9", "9.1", "9.1.3" (1-indexed)
+        // Subdivisions are sixteenth notes (1/16 of a beat)
+        inline std::optional<TimeValue> parseBarBeatSubdivision(std::string const& str) {
+            // Must contain only digits and dots, no other characters
+            if (str.empty() || !std::all_of(str.begin(), str.end(),
+                [](char c) { return std::isdigit(c) || c == '.'; }))
+                return std::nullopt;
+
+            // Cannot start or end with a dot
+            if (str.front() == '.' || str.back() == '.')
+                return std::nullopt;
+
+            // Split by '.'
+            std::vector<int> components;
+            size_t start = 0;
+            size_t end = 0;
+
+            while (end != std::string::npos) {
+                end = str.find('.', start);
+                std::string part = str.substr(start, end == std::string::npos ? std::string::npos : end - start);
+
+                if (part.empty())
+                    return std::nullopt;
+
+                try {
+                    components.push_back(std::stoi(part));
+                } catch (...) {
+                    return std::nullopt;
+                }
+
+                start = end + 1;
+            }
+
+            // Must have 1-3 components
+            if (components.empty() || components.size() > 3)
+                return std::nullopt;
+
+            // Extract components with defaults
+            uint16_t bar = components.size() >= 1 ? components[0] : 1;
+            uint8_t beat = components.size() >= 2 ? components[1] : 1;
+            uint8_t subdivision = components.size() >= 3 ? components[2] : 1;
+
+            // Validate: all must be >= 1 (1-indexed)
+            if (bar < 1 || beat < 1 || subdivision < 1)
+                return std::nullopt;
+
+            // Validate ranges (reasonable limits)
+            if (bar > 9999 || beat > 255 || subdivision > 255)
+                return std::nullopt;
+
+            TimeValue tv;
+            tv.type = TimeValueType::BarBeatSubdivision;
+            tv.barBeatSub.bar = bar;
+            tv.barBeatSub.beat = beat;
+            tv.barBeatSub.subdivision = subdivision;
+            return tv;
+        }
+
     } // namespace detail
 
-    // Parse a string like "2.5s", "100ms", "1/4", "1/16t", "1/8d"
+    // Parse a string like "2.5s", "100ms", "1/4", "1/16t", "1/8d", "9.1.3"
     inline std::optional<TimeValue> parseTimeString(std::string const& str) {
         if (str.empty())
             return std::nullopt;
@@ -275,6 +357,7 @@ namespace elem
         if (auto r = detail::parseSeconds(str)) return r;
         if (auto r = detail::parseMilliseconds(str)) return r;
         if (auto r = detail::parseBarFraction(str)) return r;
+        if (auto r = detail::parseBarBeatSubdivision(str)) return r;
         if (auto r = detail::parseWholeBar(str)) return r;
 
         return std::nullopt;
@@ -323,6 +406,24 @@ namespace elem
                 // Convert beats to seconds using BPM
                 if (bpm > 0.0) {
                     timeInSeconds = beats * 60.0 / bpm;
+                }
+                break;
+            }
+
+            case TimeValueType::BarBeatSubdivision: {
+                // Convert bar.beat.subdivision to beats (1-indexed)
+                // bar: number of complete bars (bar-1 complete bars + current bar)
+                // beat: current beat within bar (beat-1)
+                // subdivision: sixteenth notes within beat (subdivision-1) / 16.0
+                double beatsFromBars = static_cast<double>(tv.barBeatSub.bar - 1) * timeSignatureNum;
+                double beatsWithinBar = static_cast<double>(tv.barBeatSub.beat - 1);
+                double beatsFromSubdivision = static_cast<double>(tv.barBeatSub.subdivision - 1) / 16.0;
+
+                double totalBeats = beatsFromBars + beatsWithinBar + beatsFromSubdivision;
+
+                // Convert beats to seconds using BPM
+                if (bpm > 0.0) {
+                    timeInSeconds = totalBeats * 60.0 / bpm;
                 }
                 break;
             }

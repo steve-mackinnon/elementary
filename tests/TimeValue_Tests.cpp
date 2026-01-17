@@ -80,10 +80,12 @@ void testParseTimeString (choc::test::TestProgress& progress)
 
     {
         CHOC_TEST (ParseWholeBars)
+        // Note: Plain "4" now parses as bar.beat.subdivision (bar 4), not whole bars
+        // Use "4t" or "4d" for whole bars with modifiers
         auto result = elem::parseTimeString("4");
         CHOC_EXPECT_TRUE (result.has_value());
-        CHOC_EXPECT_EQ (static_cast<int>(result->type), static_cast<int>(elem::TimeValueType::BarsNormal));
-        CHOC_EXPECT_EQ (static_cast<int>(result->division), static_cast<int>(elem::MusicalDivision::Div_4));
+        CHOC_EXPECT_EQ (static_cast<int>(result->type), static_cast<int>(elem::TimeValueType::BarBeatSubdivision));
+        CHOC_EXPECT_EQ (result->barBeatSub.bar, 4);
     }
 
     {
@@ -123,6 +125,76 @@ void testParseTimeString (choc::test::TestProgress& progress)
     {
         CHOC_TEST (ParseInvalidDenominator)
         auto result = elem::parseTimeString("1/3");
+        CHOC_EXPECT_FALSE (result.has_value());
+    }
+
+    {
+        CHOC_TEST (ParseBarOnly)
+        auto result = elem::parseTimeString("9");
+        CHOC_EXPECT_TRUE (result.has_value());
+        CHOC_EXPECT_EQ (static_cast<int>(result->type), static_cast<int>(elem::TimeValueType::BarBeatSubdivision));
+        CHOC_EXPECT_EQ (result->barBeatSub.bar, 9);
+        CHOC_EXPECT_EQ (result->barBeatSub.beat, 1);
+        CHOC_EXPECT_EQ (result->barBeatSub.subdivision, 1);
+    }
+
+    {
+        CHOC_TEST (ParseBarBeat)
+        auto result = elem::parseTimeString("9.2");
+        CHOC_EXPECT_TRUE (result.has_value());
+        CHOC_EXPECT_EQ (static_cast<int>(result->type), static_cast<int>(elem::TimeValueType::BarBeatSubdivision));
+        CHOC_EXPECT_EQ (result->barBeatSub.bar, 9);
+        CHOC_EXPECT_EQ (result->barBeatSub.beat, 2);
+        CHOC_EXPECT_EQ (result->barBeatSub.subdivision, 1);
+    }
+
+    {
+        CHOC_TEST (ParseBarBeatSubdivision)
+        auto result = elem::parseTimeString("9.1.3");
+        CHOC_EXPECT_TRUE (result.has_value());
+        CHOC_EXPECT_EQ (static_cast<int>(result->type), static_cast<int>(elem::TimeValueType::BarBeatSubdivision));
+        CHOC_EXPECT_EQ (result->barBeatSub.bar, 9);
+        CHOC_EXPECT_EQ (result->barBeatSub.beat, 1);
+        CHOC_EXPECT_EQ (result->barBeatSub.subdivision, 3);
+    }
+
+    {
+        CHOC_TEST (ParseBarBeatSubdivisionLarge)
+        auto result = elem::parseTimeString("16.4.16");
+        CHOC_EXPECT_TRUE (result.has_value());
+        CHOC_EXPECT_EQ (static_cast<int>(result->type), static_cast<int>(elem::TimeValueType::BarBeatSubdivision));
+        CHOC_EXPECT_EQ (result->barBeatSub.bar, 16);
+        CHOC_EXPECT_EQ (result->barBeatSub.beat, 4);
+        CHOC_EXPECT_EQ (result->barBeatSub.subdivision, 16);
+    }
+
+    {
+        CHOC_TEST (ParseInvalidBarBeatSubdivision_Letters)
+        auto result = elem::parseTimeString("a.b.c");
+        CHOC_EXPECT_FALSE (result.has_value());
+    }
+
+    {
+        CHOC_TEST (ParseInvalidBarBeatSubdivision_ZeroBar)
+        auto result = elem::parseTimeString("0.1.1");
+        CHOC_EXPECT_FALSE (result.has_value());
+    }
+
+    {
+        CHOC_TEST (ParseInvalidBarBeatSubdivision_TooManyComponents)
+        auto result = elem::parseTimeString("9.1.3.4");
+        CHOC_EXPECT_FALSE (result.has_value());
+    }
+
+    {
+        CHOC_TEST (ParseBarBeatSubdivision_TrailingDot)
+        auto result = elem::parseTimeString("9.");
+        CHOC_EXPECT_FALSE (result.has_value());
+    }
+
+    {
+        CHOC_TEST (ParseBarBeatSubdivision_LeadingDot)
+        auto result = elem::parseTimeString(".9");
         CHOC_EXPECT_FALSE (result.has_value());
     }
 }
@@ -206,6 +278,40 @@ void testEncodeDecodeRoundtrip (choc::test::TestProgress& progress)
 
         CHOC_EXPECT_EQ (static_cast<int>(decoded.type), static_cast<int>(elem::TimeValueType::Invalid));
     }
+
+    {
+        CHOC_TEST (RoundtripBarBeatSubdivision)
+        elem::TimeValue tv;
+        tv.type = elem::TimeValueType::BarBeatSubdivision;
+        tv.barBeatSub.bar = 9;
+        tv.barBeatSub.beat = 1;
+        tv.barBeatSub.subdivision = 3;
+
+        uint64_t encoded = elem::encodeTimeValue(tv);
+        elem::TimeValue decoded = elem::decodeTimeValue(encoded);
+
+        CHOC_EXPECT_EQ (static_cast<int>(decoded.type), static_cast<int>(elem::TimeValueType::BarBeatSubdivision));
+        CHOC_EXPECT_EQ (decoded.barBeatSub.bar, 9);
+        CHOC_EXPECT_EQ (decoded.barBeatSub.beat, 1);
+        CHOC_EXPECT_EQ (decoded.barBeatSub.subdivision, 3);
+    }
+
+    {
+        CHOC_TEST (RoundtripBarBeatSubdivisionLarge)
+        elem::TimeValue tv;
+        tv.type = elem::TimeValueType::BarBeatSubdivision;
+        tv.barBeatSub.bar = 999;
+        tv.barBeatSub.beat = 255;
+        tv.barBeatSub.subdivision = 255;
+
+        uint64_t encoded = elem::encodeTimeValue(tv);
+        elem::TimeValue decoded = elem::decodeTimeValue(encoded);
+
+        CHOC_EXPECT_EQ (static_cast<int>(decoded.type), static_cast<int>(elem::TimeValueType::BarBeatSubdivision));
+        CHOC_EXPECT_EQ (decoded.barBeatSub.bar, 999);
+        CHOC_EXPECT_EQ (decoded.barBeatSub.beat, 255);
+        CHOC_EXPECT_EQ (decoded.barBeatSub.subdivision, 255);
+    }
 }
 
 void testToNormalizedPosition (choc::test::TestProgress& progress)
@@ -288,6 +394,92 @@ void testToNormalizedPosition (choc::test::TestProgress& progress)
 
         double norm = elem::toNormalizedPosition(tv, 120.0, bufferLength, sampleRate);
         CHOC_EXPECT_NEAR (norm, 0.0, 0.0001);
+    }
+
+    {
+        CHOC_TEST (BarBeatSubdivisionToNormalized_FirstBarFirstBeat)
+        // At 120 BPM, 4/4: 1 bar = 2 seconds
+        // "1.1.1" = bar 1, beat 1, subdivision 1 = start of bar 1 = 0 seconds
+        elem::TimeValue tv;
+        tv.type = elem::TimeValueType::BarBeatSubdivision;
+        tv.barBeatSub.bar = 1;
+        tv.barBeatSub.beat = 1;
+        tv.barBeatSub.subdivision = 1;
+
+        double norm = elem::toNormalizedPosition(tv, 120.0, bufferLength, sampleRate, 4.0, 4.0);
+        CHOC_EXPECT_NEAR (norm, 0.0, 0.0001);
+    }
+
+    {
+        CHOC_TEST (BarBeatSubdivisionToNormalized_MidBar)
+        // At 120 BPM, 4/4: 1 bar = 2 seconds, 1 beat = 0.5 seconds
+        // "1.3.1" = bar 1, beat 3 = 2 beats from start = 1.0 seconds
+        elem::TimeValue tv;
+        tv.type = elem::TimeValueType::BarBeatSubdivision;
+        tv.barBeatSub.bar = 1;
+        tv.barBeatSub.beat = 3;
+        tv.barBeatSub.subdivision = 1;
+
+        double norm = elem::toNormalizedPosition(tv, 120.0, bufferLength, sampleRate, 4.0, 4.0);
+        CHOC_EXPECT_NEAR (norm, 1.0, 0.0001);
+    }
+
+    {
+        CHOC_TEST (BarBeatSubdivisionToNormalized_WithSubdivision)
+        // At 120 BPM, 4/4: 1 beat = 0.5 seconds, 1/16 beat = 0.03125 seconds
+        // "1.1.9" = bar 1, beat 1, subdivision 9 = 8/16 beats = 0.5 beats = 0.25 seconds
+        elem::TimeValue tv;
+        tv.type = elem::TimeValueType::BarBeatSubdivision;
+        tv.barBeatSub.bar = 1;
+        tv.barBeatSub.beat = 1;
+        tv.barBeatSub.subdivision = 9;  // 8 sixteenth notes (subdivision-1=8)
+
+        double norm = elem::toNormalizedPosition(tv, 120.0, bufferLength, sampleRate, 4.0, 4.0);
+        CHOC_EXPECT_NEAR (norm, 0.25, 0.0001);
+    }
+
+    {
+        CHOC_TEST (BarBeatSubdivisionToNormalized_SecondBar)
+        // At 120 BPM, 4/4: "2.1.1" = bar 2, beat 1 = 1 bar = 2 seconds
+        // For 2-second buffer: normalized = 1.0
+        elem::TimeValue tv;
+        tv.type = elem::TimeValueType::BarBeatSubdivision;
+        tv.barBeatSub.bar = 2;
+        tv.barBeatSub.beat = 1;
+        tv.barBeatSub.subdivision = 1;
+
+        uint64_t twoSecBuffer = 88200;
+        double norm = elem::toNormalizedPosition(tv, 120.0, twoSecBuffer, sampleRate, 4.0, 4.0);
+        CHOC_EXPECT_NEAR (norm, 1.0, 0.0001);
+    }
+
+    {
+        CHOC_TEST (BarBeatSubdivisionToNormalized_TimeSignature34)
+        // At 120 BPM, 3/4: 1 bar = 3 beats = 1.5 seconds
+        // "2.1.1" = bar 2, beat 1 = 1 complete bar = 1.5 seconds
+        // Use 2-second buffer to avoid clamping
+        elem::TimeValue tv;
+        tv.type = elem::TimeValueType::BarBeatSubdivision;
+        tv.barBeatSub.bar = 2;
+        tv.barBeatSub.beat = 1;
+        tv.barBeatSub.subdivision = 1;
+
+        uint64_t twoSecBuffer = 88200;
+        double norm = elem::toNormalizedPosition(tv, 120.0, twoSecBuffer, sampleRate, 3.0, 4.0);
+        CHOC_EXPECT_NEAR (norm, 0.75, 0.0001);  // 1.5 seconds / 2 seconds = 0.75
+    }
+
+    {
+        CHOC_TEST (BarBeatSubdivisionToNormalized_ClampToOne)
+        // Value beyond buffer length should clamp to 1.0
+        elem::TimeValue tv;
+        tv.type = elem::TimeValueType::BarBeatSubdivision;
+        tv.barBeatSub.bar = 10;
+        tv.barBeatSub.beat = 1;
+        tv.barBeatSub.subdivision = 1;
+
+        double norm = elem::toNormalizedPosition(tv, 120.0, bufferLength, sampleRate, 4.0, 4.0);
+        CHOC_EXPECT_NEAR (norm, 1.0, 0.0001);
     }
 }
 
