@@ -70,7 +70,7 @@ namespace elem
 
         template <typename DestType>
         void readAdding(ReadContext<DestType> const& ctx) {
-            if (ctx.source == nullptr || fade.fadedOut()) {
+            if (ctx.source == nullptr) {
                 return;
             }
 

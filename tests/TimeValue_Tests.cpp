@@ -80,12 +80,10 @@ void testParseTimeString (choc::test::TestProgress& progress)
 
     {
         CHOC_TEST (ParseWholeBars)
-        // Note: Plain "4" now parses as bar.beat.subdivision (bar 4), not whole bars
-        // Use "4t" or "4d" for whole bars with modifiers
         auto result = elem::parseTimeString("4");
         CHOC_EXPECT_TRUE (result.has_value());
-        CHOC_EXPECT_EQ (static_cast<int>(result->type), static_cast<int>(elem::TimeValueType::BarBeatSubdivision));
-        CHOC_EXPECT_EQ (result->barBeatSub.bar, 4);
+        CHOC_EXPECT_EQ (static_cast<int>(result->type), static_cast<int>(elem::TimeValueType::BarsNormal));
+        CHOC_EXPECT_EQ (static_cast<int>(result->division), static_cast<int>(elem::MusicalDivision::Div_4));
     }
 
     {
@@ -129,23 +127,10 @@ void testParseTimeString (choc::test::TestProgress& progress)
     }
 
     {
-        CHOC_TEST (ParseBarOnly)
-        auto result = elem::parseTimeString("9");
-        CHOC_EXPECT_TRUE (result.has_value());
-        CHOC_EXPECT_EQ (static_cast<int>(result->type), static_cast<int>(elem::TimeValueType::BarBeatSubdivision));
-        CHOC_EXPECT_EQ (result->barBeatSub.bar, 9);
-        CHOC_EXPECT_EQ (result->barBeatSub.beat, 1);
-        CHOC_EXPECT_EQ (result->barBeatSub.subdivision, 1);
-    }
-
-    {
-        CHOC_TEST (ParseBarBeat)
+        CHOC_TEST (ParseInvalidBarBeatSubdivision_TwoComponents)
+        // "9.2" should fail - bar.beat.subdivision requires all 3 components
         auto result = elem::parseTimeString("9.2");
-        CHOC_EXPECT_TRUE (result.has_value());
-        CHOC_EXPECT_EQ (static_cast<int>(result->type), static_cast<int>(elem::TimeValueType::BarBeatSubdivision));
-        CHOC_EXPECT_EQ (result->barBeatSub.bar, 9);
-        CHOC_EXPECT_EQ (result->barBeatSub.beat, 2);
-        CHOC_EXPECT_EQ (result->barBeatSub.subdivision, 1);
+        CHOC_EXPECT_FALSE (result.has_value());
     }
 
     {
@@ -342,13 +327,14 @@ void testToNormalizedPosition (choc::test::TestProgress& progress)
     }
 
     {
-        CHOC_TEST (ClampToMax)
+        CHOC_TEST (ValueBeyondBufferDuration)
+        // Values beyond buffer duration are not clamped to allow loop lengths > sample duration
         elem::TimeValue tv;
         tv.type = elem::TimeValueType::Seconds;
-        tv.timeSeconds = 2.0; // Beyond buffer length
+        tv.timeSeconds = 2.0; // Beyond buffer length (buffer is 1 second)
 
         double norm = elem::toNormalizedPosition(tv, 120.0, bufferLength, sampleRate);
-        CHOC_EXPECT_NEAR (norm, 1.0, 0.0001);
+        CHOC_EXPECT_NEAR (norm, 2.0, 0.0001);
     }
 
     {
@@ -470,8 +456,9 @@ void testToNormalizedPosition (choc::test::TestProgress& progress)
     }
 
     {
-        CHOC_TEST (BarBeatSubdivisionToNormalized_ClampToOne)
-        // Value beyond buffer length should clamp to 1.0
+        CHOC_TEST (BarBeatSubdivisionToNormalized_BeyondBufferDuration)
+        // Value beyond buffer duration not clamped to allow loop lengths > sample duration
+        // Bar 10 at 120 BPM, 4/4 = 9 bars = 36 beats = 18 seconds on 1-second buffer = 18.0
         elem::TimeValue tv;
         tv.type = elem::TimeValueType::BarBeatSubdivision;
         tv.barBeatSub.bar = 10;
@@ -479,7 +466,7 @@ void testToNormalizedPosition (choc::test::TestProgress& progress)
         tv.barBeatSub.subdivision = 1;
 
         double norm = elem::toNormalizedPosition(tv, 120.0, bufferLength, sampleRate, 4.0, 4.0);
-        CHOC_EXPECT_NEAR (norm, 1.0, 0.0001);
+        CHOC_EXPECT_NEAR (norm, 18.0, 0.0001);
     }
 }
 

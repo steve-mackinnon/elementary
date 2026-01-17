@@ -289,7 +289,7 @@ namespace elem
             }
         }
 
-        // Parse bar.beat.subdivision format: "9", "9.1", "9.1.3" (1-indexed)
+        // Parse bar.beat.subdivision format: "9.1.3" ONLY (1-indexed, all 3 required)
         // Subdivisions are sixteenth notes (1/16 of a beat)
         inline std::optional<TimeValue> parseBarBeatSubdivision(std::string const& str) {
             // Must contain only digits and dots, no other characters
@@ -322,14 +322,14 @@ namespace elem
                 start = end + 1;
             }
 
-            // Must have 1-3 components
-            if (components.empty() || components.size() > 3)
+            // Must have exactly 3 components
+            if (components.size() != 3)
                 return std::nullopt;
 
-            // Extract components with defaults
-            uint16_t bar = components.size() >= 1 ? components[0] : 1;
-            uint8_t beat = components.size() >= 2 ? components[1] : 1;
-            uint8_t subdivision = components.size() >= 3 ? components[2] : 1;
+            // Extract components
+            uint16_t bar = components[0];
+            uint8_t beat = components[1];
+            uint8_t subdivision = components[2];
 
             // Validate: all must be >= 1 (1-indexed)
             if (bar < 1 || beat < 1 || subdivision < 1)
@@ -437,8 +437,8 @@ namespace elem
         double bufferDurationSeconds = static_cast<double>(bufferLengthSamples) / sampleRate;
         double normalized = timeInSeconds / bufferDurationSeconds;
 
-        // Clamp to [0.0, 1.0]
-        return std::max(0.0, std::min(1.0, normalized));
+        // Note: Not clamped here to allow loop lengths > sample duration
+        return normalized;
     }
 
     // Helper to decode and convert loop start/end time values to normalized positions

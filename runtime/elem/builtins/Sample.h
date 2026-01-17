@@ -162,8 +162,7 @@ namespace elem
                                      ctx.currentTime.timeSignatureNumerator,
                                      ctx.currentTime.timeSignatureDenominator);
 
-            // Compute end and clamp to [0,1]
-            auto const lend = std::min(1.0, lstart + llength);
+            auto const lend = lstart + llength;
 
             auto const loopRange = std::make_optional(std::make_pair(lstart, lend));
 
