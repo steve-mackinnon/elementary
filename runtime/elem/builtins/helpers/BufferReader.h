@@ -24,10 +24,14 @@ namespace elem
         void engage (double _position) {
             fade.fadeIn();
             position = _position;
+            inLoopCrossfade = false;
+            loopStartFade.reset();
        }
 
         void disengage() {
             fade.fadeOut();
+            inLoopCrossfade = false;
+            loopStartFade.reset();
         }
 
         template <typename DestType>
@@ -77,6 +81,11 @@ namespace elem
             auto const numChannels = std::min(ctx.numChannels, ctx.source->numChannels());
             auto const bufferSize = ctx.source->numSamples();
             if (numChannels == 0 || bufferSize == 0) {
+                return;
+            }
+
+            // Don't process if this reader is fully faded out
+            if (fade.fadedOut()) {
                 return;
             }
 
