@@ -5,7 +5,6 @@
 #include <cstring>
 #include <optional>
 #include <string>
-#include <tuple>
 #include <utility>
 
 #include "../../Types.h"
@@ -87,7 +86,6 @@ namespace elem
             case MusicalDivision::Div_8: return 8.0;
             case MusicalDivision::Div_16: return 16.0;
             case MusicalDivision::Div_32: return 32.0;
-            default: return 1.0;
         }
     }
 
@@ -120,7 +118,6 @@ namespace elem
                 return typeTag | (payload << 3);
             }
             case TimeValueType::Invalid:
-            default:
                 return typeTag;
         }
     }
@@ -154,7 +151,6 @@ namespace elem
                 break;
             }
             case TimeValueType::Invalid:
-            default:
                 tv.timeSeconds = 0.0;
                 break;
         }
@@ -222,8 +218,14 @@ namespace elem
             }
         }
 
-        // Extract triplet/dotted suffix, returns (isTriplet, isDotted, strippedString)
-        inline std::tuple<bool, bool, std::string> extractModifierSuffix(std::string const& str) {
+        struct ModifierSuffix {
+            bool isTriplet;
+            bool isDotted;
+            std::string strippedString;
+        };
+
+        // Extract triplet/dotted suffix
+        inline ModifierSuffix extractModifierSuffix(std::string const& str) {
             if (!str.empty() && str.back() == 't')
                 return {true, false, str.substr(0, str.size() - 1)};
             if (!str.empty() && str.back() == 'd')
