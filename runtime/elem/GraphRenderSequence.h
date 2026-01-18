@@ -121,6 +121,7 @@ namespace elem
                     rootCtx.active,
                     rootCtx.inputEvents,
                     outputEvents,
+                    rootCtx.currentTime,
                 });
             });
         }
@@ -178,6 +179,7 @@ namespace elem
                     rootCtx.active,
                     aggregateInputEvents,
                     outputEvents,
+                    rootCtx.currentTime,
                 });
             });
         }
@@ -239,7 +241,8 @@ namespace elem
                     hostCtx.userData,
                     rootPtr->active(),
                     hostCtx.inputEvents,
-                    hostCtx.outputEvents
+                    hostCtx.outputEvents,
+                    hostCtx.currentTime,
                 });
             }
 
