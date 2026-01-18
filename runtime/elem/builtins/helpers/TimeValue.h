@@ -443,30 +443,33 @@ namespace elem
         return normalized;
     }
 
-    // Helper to decode and convert loop start/end time values to normalized positions
+    // Helper to decode and convert loop start/length time values to normalized positions
     // Returns pair of (loopStart, loopEnd) in normalized [0.0, 1.0] range
     inline std::pair<double, double> decodeAndConvertLoopPoints(
         uint64_t encodedStart,
-        uint64_t encodedEnd,
+        uint64_t encodedLength,
         uint64_t bufferLength,
         double sampleRate,
         CurrentTime const& currentTime)
     {
         // Decode time values
-        auto lstartTV = decodeTimeValue(encodedStart);
-        auto lendTV = decodeTimeValue(encodedEnd);
+        auto loopStartTime = decodeTimeValue(encodedStart);
+        auto loopLengthTime = decodeTimeValue(encodedLength);
 
         // Convert to normalized positions (fallback to defaults if invalid)
-        auto const lstart = lstartTV.type == TimeValueType::Invalid ? 0.0 :
-            toNormalizedPosition(lstartTV, currentTime.bpm, bufferLength, sampleRate,
+        auto const normalizedLoopStart = loopStartTime.type == TimeValueType::Invalid ? 0.0 :
+            toNormalizedPosition(loopStartTime, currentTime.bpm, bufferLength, sampleRate,
                                  currentTime.timeSignatureNumerator,
                                  currentTime.timeSignatureDenominator);
-        auto const lend = lendTV.type == TimeValueType::Invalid ? 1.0 :
-            toNormalizedPosition(lendTV, currentTime.bpm, bufferLength, sampleRate,
+        auto const normalizedLoopLength = loopLengthTime.type == TimeValueType::Invalid ? 1.0 :
+            toNormalizedPosition(loopLengthTime, currentTime.bpm, bufferLength, sampleRate,
                                  currentTime.timeSignatureNumerator,
                                  currentTime.timeSignatureDenominator);
 
-        return std::make_pair(lstart, lend);
+        // Compute end point from start + length
+        auto const normalizedLoopEnd = normalizedLoopStart + normalizedLoopLength;
+
+        return std::make_pair(normalizedLoopStart, normalizedLoopEnd);
     }
 
 } // namespace elem
