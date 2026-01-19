@@ -50,7 +50,7 @@ namespace elem
         int applyInstructions(js::Array const& batch);
 
         // Run the internal audio processing callback
-        void process(
+        bool process(
             const FloatType** inputChannelData,
             size_t numInputChannels,
             FloatType** outputChannelData,
@@ -63,7 +63,7 @@ namespace elem
         // This allows invoking the process callback with a BlockContext
         // directly. The BlockContext uses type-erased events, allowing
         // the caller to pass any custom event types without template parameters.
-        void process(BlockContext<FloatType> const& ctx);
+        bool process(BlockContext<FloatType> const& ctx);
 
         //==============================================================================
         // Process queued events
@@ -283,12 +283,12 @@ namespace elem
     }
 
     template <typename FloatType>
-    void Runtime<FloatType>::process(const FloatType** inputChannelData, size_t numInputChannels, FloatType** outputChannelData, size_t numOutputChannels, size_t numSamples, void* userData)
+    bool Runtime<FloatType>::process(const FloatType** inputChannelData, size_t numInputChannels, FloatType** outputChannelData, size_t numOutputChannels, size_t numSamples, void* userData)
     {
         BlockEvents emptyInputEvents;
         BlockEvents emptyOutputEvents;
 
-        process(BlockContext<FloatType> {
+        return process(BlockContext<FloatType> {
             inputChannelData,
             numInputChannels,
             outputChannelData,
@@ -303,7 +303,7 @@ namespace elem
     }
 
     template <typename FloatType>
-    void Runtime<FloatType>::process(BlockContext<FloatType> const& ctx)
+    bool Runtime<FloatType>::process(BlockContext<FloatType> const& ctx)
     {
         if (rseqQueue.size() > 0) {
             std::shared_ptr<GraphRenderSequence<FloatType>> rseq;
@@ -317,7 +317,10 @@ namespace elem
 
         if (rtRenderSeq) {
             rtRenderSeq->process(ctx);
+            return true;
         }
+
+        return false;
     }
 
     //==============================================================================
