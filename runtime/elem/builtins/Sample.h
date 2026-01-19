@@ -126,6 +126,8 @@ namespace elem
 
             auto const sampleRate = GraphNode<FloatType>::getSampleRate();
 
+            std::fill_n(outputData, numSamples, FloatType(0));
+
             // First order of business: grab the most recent sample buffer to use if
             // there's anything in the queue. This behavior means that changing the buffer
             // while playing the sample will cause a discontinuity.
