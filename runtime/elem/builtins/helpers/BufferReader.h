@@ -114,7 +114,6 @@ namespace elem
                 0.5 * loopLength
             );
 
-            auto const loopLengthWithFade = loopEnd - loopStart - normalizedFadeWindow;
             auto const posIncrement = ctx.playbackRate / static_cast<double>(sampleLength);
 
             for (size_t j = 0; j < numChannels; ++j) {
@@ -139,7 +138,7 @@ namespace elem
 
                     if (inCrossfade) {
                         // Dual-read crossfade path: derive head position from tail position
-                        auto const headPos = pos - loopLengthWithFade;
+                        auto const headPos = pos - loopLength;
                         auto const tail = localFade(lerpRead(bufferView, pos));
                         auto const head = localLoopStartFade(lerpRead(bufferView, headPos));
                         ctx.outputData[j][i + ctx.writeOffset] += static_cast<DestType>(tail + head);
@@ -151,7 +150,7 @@ namespace elem
                         // 2. Tail position reached loop end before fade completed (fast playback)
                         if (localFade.fadedOut() || pos >= loopEnd) {
                             inCrossfade = false;
-                            pos = pos - loopLengthWithFade;
+                            pos = pos - loopLength;
                             localFade = localLoopStartFade;
                             // Ensure the loop fade is reset to zero before the next loop
                             localLoopStartFade.reset();
