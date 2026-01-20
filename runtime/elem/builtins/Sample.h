@@ -22,7 +22,7 @@ namespace elem
         using GraphNode<FloatType>::GraphNode;
         using ReaderContext = typename BufferReader<FloatType>::template ReadContext<FloatType>;
 
-        static constexpr double FadeTime = 8.0;
+        static constexpr double FadeTime = 1.0;
 
         SampleNode(NodeId id, double sr, size_t blockSize)
             : GraphNode<FloatType>::GraphNode(id, sr, blockSize)
